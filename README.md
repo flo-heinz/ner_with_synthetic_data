@@ -44,3 +44,60 @@ Each saved JSON record contains `tokens` and `entities`, with `text`, `label`, `
 - Strict quotas and repetition limits may require additional generation attempts.
 
 A separate preprocessing step converts `tokens` to `tokenized_text` and entity spans to `ner` entries, changing end-exclusive indices to end-inclusive indices. The thesis fine-tunes `numind/NuNerZero_span` and evaluates against gold-standard annotations using precision, recall, and F1.
+
+## GLiNER Fine-Tuning Arguments
+
+The separate GLiNER training script accepts the following command-line arguments. It expects **preprocessed** records containing `tokenized_text` and `ner` (with inclusive end indices), not the generator's raw `tokens`/`entities` output.
+
+### Input and output
+
+| Argument | Default | Description |
+| --- | --- | --- |
+| `--train_files` | **Required** | One or more JSON/JSONL training files. These are loaded and optionally subsampled before synthetic data is added. |
+| `--synthetic_files` | None | Optional additional JSON/JSONL training files, appended to the selected training data. |
+| `--eval_files` | None | Optional separate evaluation files. If omitted, evaluation data is split from the combined training data. |
+| `--model_name` | `numind/NuNerZero_span` | Pretrained GLiNER checkpoint to fine-tune. |
+| `-o`, `--base_output_dir` | `data/local/ner/models` | Parent directory for the automatically named model output folder. |
+| `-f`, `--force` | Off | Delete and replace an existing output folder. **Use with care.** |
+
+### Training and evaluation
+
+| Argument | Default | Description |
+| --- | --- | --- |
+| `--batch_size` | `2` | Per-device training and evaluation batch size. |
+| `--accumulation_steps` | `1` | Number of gradient accumulation steps. |
+| `--num_train_epochs` | `None` | Number of training epochs; when omitted, the training library determines its behavior. |
+| `--train_fraction` | `1.0` | Fraction of data from `--train_files` to retain, before adding synthetic data. Must be greater than 0 and at most 1. |
+| `--eval_fraction` | `0.1` | Fraction of combined data reserved for evaluation when `--eval_files` is absent. Set to `0` to disable this split. |
+| `--learning_rate` | `5e-6` | Learning rate for the main model parameters. |
+| `--others_lr` | `1e-5` | Learning rate for other parameter groups. |
+| `--weight_decay` | `0.01` | Weight decay for the main parameter group. |
+| `--others_weight_decay` | `0.01` | Weight decay for other parameter groups. |
+| `--warmup_ratio` | `0.1` | Fraction of training steps used for learning-rate warmup. |
+| `--focal_loss_alpha` | `0.75` | Focal-loss alpha parameter. |
+| `--focal_loss_gamma` | `2.0` | Focal-loss gamma parameter. |
+| `--save_steps` | `100` | Checkpoint saving interval in steps. |
+| `--save_total_limit` | `1` | Maximum number of saved checkpoints to retain. |
+| `--report_to` | `none` | Training-reporting integration passed to GLiNER. |
+| `--seed` | `42` | Seed for dataset shuffling and PyTorch random number generation. |
+
+### Training example
+
+Assuming your training script is named `train_gliner.py`:
+
+```bash
+python train_gliner.py \
+  --train_files data/local/ner/processed_train.json \
+  --synthetic_files data/local/ner/processed_synthetic.json \
+  --eval_files data/local/ner/processed_eval.json \
+  --model_name numind/NuNerZero_span \
+  --batch_size 2 \
+  --accumulation_steps 4 \
+  --num_train_epochs 3 \
+  --learning_rate 5e-6 \
+  --seed 42
+```
+
+Replace the example paths and script name with the actual ones in your project. For **synthetic-only training**, provide the synthetic training dataset through `--train_files` and omit `--synthetic_files`.
+
+The training script shuffles the data, lowercases tokens inside annotated entity spans, and uses CUDA if available (otherwise CPU). When `--eval_files` is supplied, it uses those files as the evaluation set instead of splitting the training data. Output folder names are derived from the model name and the **parent directory names** of the input files; distinct input filenames in the same directories may therefore produce the same output folder name.
