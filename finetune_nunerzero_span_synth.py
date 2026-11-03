@@ -14,7 +14,7 @@ from gliner import GLiNER
 
 load_dotenv()
 
-
+# Configure training data paths, model settings, and hyperparameters.
 def set_args():
     ap = ArgumentParser()
 
@@ -50,7 +50,7 @@ def set_args():
 
     return ap.parse_args()
 
-
+# Generate a descriptive output directory name from the model and datasets.
 def infer_output_dir(
     base_output_dir,
     model_name,
@@ -75,7 +75,7 @@ def infer_output_dir(
         f"{model_name_clean}--{dataset_part}--lowercase-entities"
     )
 
-
+# Load training examples from JSON or JSONL files.
 def load_data_from_files(file_paths):
     data = []
 
@@ -120,7 +120,7 @@ def load_data_from_files(file_paths):
 
     return data
 
-
+# Lowercase only tokens belonging to entity spans, preserving other tokens.
 def lowercase_entities(data):
     for record_idx, record in enumerate(data):
         tokens = list(record["tokenized_text"])
@@ -145,7 +145,7 @@ def lowercase_entities(data):
 
     return data
 
-
+# Shuffle reproducibly and optionally select a fraction of the dataset.
 def shuffle_and_fraction(data, fraction, seed):
     if not 0 < fraction <= 1:
         raise ValueError(
@@ -161,7 +161,7 @@ def shuffle_and_fraction(data, fraction, seed):
 
     return data
 
-
+# Split the shuffled dataset into training and evaluation subsets.
 def split_train_eval(data, eval_fraction):
     if eval_fraction <= 0:
         return data, None
@@ -182,7 +182,7 @@ def split_train_eval(data, eval_fraction):
 
     return data[:split_idx], data[split_idx:]
 
-
+# Fine-tune GLiNER using the configured training hyperparameters.
 def run_training(
     model,
     train_dataset,
@@ -240,6 +240,7 @@ def main():
             args.synthetic_files
         )
 
+    # Combine real and synthetic examples before creating the train/eval split.
     data = real_data + synthetic_data
     random.Random(args.seed).shuffle(data)
 

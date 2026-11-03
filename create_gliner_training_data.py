@@ -303,27 +303,13 @@ def main() -> None:
             indent=2,
         )
 
-    logger.info(
-        f"Processed {total_sentences} sentences"
-    )
-    logger.info(
-        f"Skipped {total_skipped} sentences with missing or invalid tokens"
-    )
-    logger.info(
-        f"Found {total_negative} negative sentences with no valid entities"
-    )
-    logger.info(
-        f"Kept {total_positive} sentences with at least one entity"
-    )
-    logger.info(
-        f"Found {len(total_label_counts)} labels"
-    )
-    logger.info(
-        f"Label counts: {dict(total_label_counts)}"
-    )
-    logger.info(
-        f"Saved combined GLiNER dataset to {output_file}"
-    )
+    logger.info(f"Processed {total_sentences} sentences")
+    logger.info(f"Skipped {total_skipped} sentences with missing or invalid tokens")
+    logger.info(f"Found {total_negative} negative sentences with no valid entities")
+    logger.info(f"Kept {total_positive} sentences with at least one entity")
+    logger.info(f"Found {len(total_label_counts)} labels")
+    logger.info(f"Label counts: {dict(total_label_counts)}")
+    logger.info(f"Saved combined GLiNER dataset to {output_file}")
 
     if all_gliner_data:
         print("\nExample:")

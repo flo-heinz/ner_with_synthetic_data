@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from tqdm import tqdm
 
 
-# Configuration
+# Generation settings and local model endpoint.
 synthetic_entities_per_label = 250
 temperature = 0.8
 few_shot_sentence_count = 8
@@ -101,6 +101,7 @@ def normalize(text: str) -> str:
 
 
 def load_references() -> dict[str, list[dict]]:
+    """Load and deduplicate annotated reference examples by entity label."""
     if not reference_dir.is_dir():
         raise FileNotFoundError(f"Reference directory not found: {reference_dir}")
 
@@ -135,6 +136,7 @@ def load_references() -> dict[str, list[dict]]:
 
 
 def get_client():
+    """Reuse one OpenAI-compatible client per worker thread."""
     if not hasattr(THREAD_LOCAL, "client"):
         THREAD_LOCAL.client = instructor.from_openai(
             OpenAI(base_url=base_url, api_key="EMPTY", timeout=120),
@@ -144,6 +146,7 @@ def get_client():
 
 
 def generate(label: str, references: list[dict], seed: int):
+    """Generate one structured example using sampled few-shot references."""
     rng = random.Random(seed)
     samples = rng.sample(references, min(few_shot_sentence_count, len(references)))
     examples = "\n".join(
@@ -167,6 +170,7 @@ def generate(label: str, references: list[dict], seed: int):
 
 
 def convert(response: Generation, label: str):
+    """Validate entity mentions and map character spans to token offsets."""
     sentence = response.sentence.strip()
     if not sentence or "\n" in sentence or "_" in sentence:
         raise ValueError("Invalid sentence")
@@ -203,6 +207,7 @@ def convert(response: Generation, label: str):
 
 
 def main():
+    """Generate unique examples until each label reaches its entity quota."""
     references = load_references()
     labels = sorted(references)
     target = synthetic_entities_per_label * len(labels)
@@ -212,11 +217,13 @@ def main():
     rng = random.Random(42)
 
     def save_records():
+        """Write results through a temporary file before replacing the target."""
         output_file.parent.mkdir(parents=True, exist_ok=True)
         temporary = output_file.with_suffix(output_file.suffix + ".tmp")
         temporary.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
         temporary.replace(output_file)
 
+    # Run generation concurrently while tracking quotas in the main thread.
     with ThreadPoolExecutor(max_workers=max_workers) as pool, tqdm(total=target) as bar:
         futures = {}
 
@@ -241,6 +248,7 @@ def main():
                     key = normalize(sentence)
                     if key in seen_sentences:
                         raise ValueError("Duplicate sentence")
+                    # Reject repeated phrases beyond the per-label diversity limit.
                     mention_counts = Counter(normalize(e["text"]) for e in record["entities"])
                     entity_total = len(record["entities"])
                     remaining = synthetic_entities_per_label - accepted[label]
@@ -268,6 +276,7 @@ def main():
     if missing:
         raise RuntimeError(f"Generation incomplete: {missing}")
 
+    # Confirm that the final records contain exactly the requested annotations.
     actual_counts = Counter(
         entity["label"] for record in records for entity in record["entities"]
     )

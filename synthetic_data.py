@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from tqdm import tqdm
 
 
-
+# Generation targets and sampling controls. The quota counts entity mentions, not sentences.
 synthetic_entities_per_label = 300
 temperature = 0.8
 few_shot_sentence_count = 8
@@ -68,11 +68,11 @@ Requirements:
 """.strip()
 
 
+# Match words, numbers, decimals, and punctuation while retaining character offsets.
 TOKEN_PATTERN = re.compile(
     r"\d+(?:\.\d+)+|[^\W\d_]+(?:'[^\W\d_]+)?|\d+|[^\w\s]",
     re.UNICODE,
 )
-
 
 
 class GeneratedEntity(BaseModel):
@@ -85,24 +85,26 @@ class GeneratedExample(BaseModel):
     entities: list[GeneratedEntity] = Field(min_length=1)
 
 
-
 def normalize(text):
+    """Normalize whitespace and case for text comparisons and deduplication."""
     return " ".join(text.casefold().split())
 
 
 def label_to_text(label):
+    """Turn an underscore-separated NER label into comparable plain text."""
     return normalize(label.replace("_", " "))
 
 
 def tokenize(text):
+    """Return each token with its start and exclusive-end character offsets."""
     return [
         (m.group(), m.start(), m.end())
         for m in TOKEN_PATTERN.finditer(text)
     ]
 
 
-
 def load_examples():
+    """Load unique, labeled reference examples from JSON and JSONL files."""
     examples = defaultdict(list)
     seen = defaultdict(set)
 
@@ -138,6 +140,7 @@ def load_examples():
                 if label not in ALLOWED_LABELS or not entity_text:
                     continue
 
+                # Deduplicate examples separately for each target label.
                 key = (normalize(sentence), normalize(entity_text))
 
                 if key not in seen[label]:
@@ -156,6 +159,7 @@ def load_examples():
 
 
 def choose_examples(label, examples):
+    """Sample up to the configured number of examples for the prompt."""
     selected = random.sample(
         examples[label],
         min(few_shot_sentence_count, len(examples[label])),
@@ -169,8 +173,8 @@ def choose_examples(label, examples):
     )
 
 
-
 def find_spans(text, entity_text, offsets):
+    """Locate exact entity mentions and convert character spans to token spans."""
     spans = []
 
     for match in re.finditer(re.escape(entity_text), text):
@@ -188,6 +192,7 @@ def find_spans(text, entity_text, offsets):
         start_token = indices[0]
         end_token = indices[-1] + 1
 
+        # Require exact token boundaries to avoid partial-token annotations.
         if (
             offsets[start_token][1] == start
             and offsets[end_token - 1][2] == end
@@ -198,6 +203,7 @@ def find_spans(text, entity_text, offsets):
 
 
 def overlaps(a, b):
+    """Check whether two exclusive-end token spans share any tokens."""
     return (
         a["start_token"] < b["end_token"]
         and b["start_token"] < a["end_token"]
@@ -205,6 +211,7 @@ def overlaps(a, b):
 
 
 def build_record(generated, target_label):
+    """Validate one generated sentence and produce a tokenized NER record."""
     text = generated.sentence.strip()
 
     if not text or "\n" in text or "_" in text:
@@ -246,6 +253,7 @@ def build_record(generated, target_label):
             if entity in entities:
                 continue
 
+            # Keep the first accepted span when annotations overlap.
             if any(overlaps(entity, other) for other in entities):
                 continue
 
@@ -285,6 +293,7 @@ def get_client():
 
 
 def generate_one(label, examples):
+    """Generate and validate one candidate sentence for a target label."""
     prompt = PROMPT.format(
         label=label,
         examples=choose_examples(label, examples),
@@ -306,9 +315,11 @@ def generate_one(label, examples):
 
 
 def main():
+    """Generate balanced synthetic NER examples and save the validated corpus."""
     examples = load_examples()
     labels = sorted(set(examples) & ALLOWED_LABELS)
 
+    # Progress is measured in accepted entity annotations, not requests.
     total = len(labels) * synthetic_entities_per_label
 
     print(f"Labels: {len(labels)}")
@@ -330,6 +341,7 @@ def main():
         futures = {}
 
         def submit(label):
+            """Schedule a generation request and remember its target label."""
             future = executor.submit(
                 generate_one,
                 label,

@@ -2,7 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-Evaluation script for NER predictions using config-based approach.
+Evaluate named entity recognition (NER) predictions against annotated data.
+
+The pipeline loads a configured dataset and annotator, generates token-level
+IOB predictions, checks token alignment, computes seqeval metrics, and saves
+intermediate predictions and evaluation results.
 """
 
 from pathlib import Path
@@ -36,8 +40,10 @@ from engage_nlp.config import load_config
 from engage_nlp.utils.custom_logging import get_logger, setup_logging
 
 
+# Load environment variables (e.g., credentials required by remote annotators).
 load_dotenv()
 
+# Use spaCy to prepare annotated documents and sentence boundaries.
 nlp = spacy.load("en_core_web_sm", exclude=["tokenizer"])
 logger = get_logger()
 
@@ -46,8 +52,10 @@ np.random.seed(seed)
 
 
 def resolve_config_paths(config: NERConfig, config_path: str | Path) -> NERConfig:
+    """Resolve relative input/output paths against the repository root."""
     config_path = Path(config_path).resolve()
 
+    # The configuration is expected to live five directories below the root.
     try:
         repo_root = config_path.parents[5]
     except IndexError:
@@ -69,6 +77,8 @@ def compute_metrics(
     predictions: list[list[tuple[str, str]]],
     references: list[list[tuple[str, str]]],
 ) -> pd.DataFrame:
+    """Compute entity-level seqeval metrics from token/IOB-tag pairs."""
+    # seqeval consumes tag sequences, not (token, tag) pairs.
     pred_labels = [[label for _, label in seq] for seq in predictions]
     ref_labels = [[label for _, label in seq] for seq in references]
 
@@ -87,6 +97,8 @@ def prepare_dataset_for_evaluation(
     level: str = "sentence",
     config: AnnotationConfig | None = None,
 ) -> pd.DataFrame:
+    """Expand annotated documents into evaluation units and reference labels."""
+    # Sentence-level evaluation creates one row per sentence.
     if level == "sentence":
         df["doc"] = df["doc"].apply(lambda doc: list(doc.sents))
         df = df.explode("doc").reset_index(drop=True)
@@ -97,6 +109,7 @@ def prepare_dataset_for_evaluation(
     else:
         raise ValueError(f"Unsupported level: {level}")
 
+    # Keep both the model input and reference representations for evaluation.
     df["source"] = df["doc"].apply(lambda doc: doc.text)
     df["target"] = df["doc"].apply(
         lambda doc: convert_spacy_doc_to_inline_xml(doc, config=config)
@@ -113,10 +126,12 @@ def replace_empty_prediction_with_placeholder(
     target_iob: list[tuple[str, str]],
     placeholder: str = "O",
 ) -> list[tuple[str, str]]:
+    """Assign the outside tag to every reference token for a failed prediction."""
     return [(token, placeholder) for token, _ in target_iob]
 
 
 def normalize_batch_output(batch_output: Any) -> list[Any]:
+    """Convert supported batch return types into a consistent list."""
     if batch_output is None:
         return []
 
@@ -135,6 +150,7 @@ def normalize_batch_output(batch_output: Any) -> list[Any]:
 
 
 def count_non_o_tags(seq: list[tuple[str, str]]) -> int:
+    """Count tokens labeled as part of an entity."""
     return sum(1 for _, tag in seq if tag != "O")
 
 
@@ -142,6 +158,8 @@ def validate_token_alignment(
     predictions: list[list[tuple[str, str]]],
     references: list[list[tuple[str, str]]],
 ) -> None:
+    """Ensure predictions and references have identical token sequences."""
+    # Matching tokens are required before comparing their IOB tags.
     if len(predictions) != len(references):
         raise ValueError(
             f"Predictions/reference length mismatch: "
@@ -170,9 +188,11 @@ def validate_token_alignment(
 
 
 def get_annotator_from_config(config: NERConfig) -> Any:
+    """Instantiate a registered annotator or a local GLiNER model."""
     model_path = Path(config.model).expanduser().resolve()
     annotator_class = annotator_map.get(config.model)
 
+    # Unregistered model names may still refer to a local GLiNER directory.
     if annotator_class is None:
         if model_path.exists():
             logger.info(f"Detected local GLiNER model path: {model_path}")
@@ -190,9 +210,11 @@ def run_predictions(
     test_df: pd.DataFrame,
     config: NERConfig,
 ) -> list[list[tuple[str, str]]]:
+    """Run inference and convert each model output into token-level IOB tags."""
     predictions: list[list[tuple[str, str]]] = []
     texts = test_df["source"].tolist()
 
+    # Batch LLM requests when configured; use one-text batches otherwise.
     if isinstance(annotator, LLMAnnotator) and config.batch_size > 1:
         logger.info(
             f"Using batch processing with batch_size={config.batch_size}, "
@@ -208,6 +230,7 @@ def run_predictions(
 
             batch_preds = normalize_batch_output(annotator.process_batch(batch_texts))
 
+            # Each input text must have exactly one corresponding output.
             if len(batch_preds) != len(batch_texts):
                 raise ValueError(
                     f"Batch prediction count mismatch: got {len(batch_preds)} "
@@ -248,6 +271,7 @@ def run_predictions(
             else:
                 pred_iob = convert_annotated_document_to_iob_tags(pred)
 
+            # Log a small sample to help diagnose missing entity predictions.
             if idx < 3:
                 logger.info(
                     f"[debug] idx={idx} "
@@ -265,6 +289,7 @@ def run_predictions(
 
 
 def main() -> None:
+    """Configure and execute the complete NER evaluation pipeline."""
     global logger
 
     parser = build_base_parser(
@@ -280,6 +305,7 @@ def main() -> None:
     logger.info(f"Loading configuration from {args.config}")
     config = load_config(args.config, NERConfig, overrides=args.overrides)
 
+    # CLI model selection overrides the model specified in the config file.
     if args.model:
         if args.model == "baseline":
             config.model = "numind/NuNerZero_span"
@@ -311,6 +337,7 @@ def main() -> None:
     logger.info(f"Configuration loaded from: {args.config}")
     logger.info(f"{config}")
 
+    # Convert Label Studio annotations into spaCy documents with gold entities.
     dataset = load_from_disk(config.input_path)
     df = dataset.to_pandas()
 
@@ -332,6 +359,7 @@ def main() -> None:
         config=annotation_config,
     )
 
+    # Optionally evaluate a smaller subset for quick debugging.
     if args.limit > 0:
         logger.info(
             f"Limiting test dataset to first {args.limit} texts for quick evaluation"
@@ -340,6 +368,7 @@ def main() -> None:
 
     annotator = get_annotator_from_config(config)
 
+    # Build a reproducible output filename from the evaluation settings.
     output_file = infer_eval_results_file(
         dataset_dir=Path(config.input_path).stem,
         model=getattr(annotator, "id", config.model),
@@ -372,6 +401,7 @@ def main() -> None:
     test_df["predictions"] = predictions
     logger.info(f"Completed {len(predictions)} predictions")
 
+    # Save raw predictions before replacing failures with placeholder labels.
     intermediate_output_file = output_file.with_suffix(".predictions_600.jsonl")
 
     if intermediate_output_file.exists() and not args.force:
@@ -403,6 +433,7 @@ def main() -> None:
     logger.info("Fixing empty predictions for evaluation...")
     fix_count = 0
 
+    # Empty outputs receive all-O tags so their tokens remain aligned.
     for idx, row in test_df.iterrows():
         if len(row["predictions"]) == 0:
             logger.warning(
@@ -418,6 +449,7 @@ def main() -> None:
     if fix_count > 0:
         logger.info(f"Replaced {fix_count} empty predictions with 'O' tags.")
 
+    # A zero predicted-entity count can indicate an inference/conversion issue.
     total_gold_non_o = sum(count_non_o_tags(seq) for seq in test_df["iob"].tolist())
     total_pred_non_o = sum(
         count_non_o_tags(seq) for seq in test_df["predictions"].tolist()
@@ -432,6 +464,7 @@ def main() -> None:
             "This strongly suggests a model output or conversion bug."
         )
 
+    # Only calculate seqeval metrics when tokenization matches exactly.
     try:
         validate_token_alignment(
             predictions=test_df["predictions"].tolist(),
@@ -465,6 +498,7 @@ def main() -> None:
             f"See intermediate predictions at {intermediate_output_file}."
         )
 
+    # Report usage/completion statistics for LLM-based annotators.
     if isinstance(annotator, LLMAnnotator):
         print("\n" + "=" * 60)
         print(annotator.completion_tracker.get_status())
