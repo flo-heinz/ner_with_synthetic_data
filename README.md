@@ -1,27 +1,27 @@
-# Balanced Synthetic NER Data Generation
+## Running the NER Pipeline
 
-Generate synthetic scientific sentences and named entity annotations for **renewable energy and biodiversity** using `Qwen/Qwen3-4B-Instruct-2507`, few-shot reference examples, and automatic validation. The data supports synthetic-only fine-tuning of **GLiNER** across 16 NER labels.
+The project contains separate scripts for generating synthetic data, preparing GLiNER training datasets, fine-tuning models, and evaluating their performance.
 
-## Balancing
+Run all commands from the project's root directory after activating the Python environment and starting the local Qwen inference server when synthetic data generation is required.
 
-The revised `balanced_ner_generation.py` targets **300 saved entity annotations per label**, rather than 300 sentences. A sentence with three valid target-label entities contributes three annotations, so the number of accepted sentences may vary between labels.
+### 1. Synthetic Data Generation
 
-Earlier thesis experiments instead balanced **accepted sentences per label** (200, 400, 600, and 800). Their reported results do **not** evaluate the revised entity-balanced script.
+Two scripts are available for generating synthetic NER training data:
 
-## Setup
+- `synthetic_data.py` — generates synthetic scientific sentences and entity annotations using the baseline prompting approach.
+- `improved_synthetic_data.py` — generates synthetic examples using the extended prompting approach with additional annotation guidelines.
 
-Use Python 3.10+ and a locally running OpenAI-compatible inference server (default: `http://localhost:8000/v1`). Install dependencies:
+Run the scripts using:
 
 ```bash
-pip install instructor openai pydantic tqdm
+python synthetic_data.py --help
+python improved_synthetic_data.py --help
 ```
 
-Reference JSON/JSONL files are read from `data/local/ner/outputs/engage-ft-auto-filtered/`. Each record needs a `text` field and an `entities` list containing entity text and label.
-
-## Usage
+Then run the desired script with its supported arguments. For example, if the script supports the generation options described earlier:
 
 ```bash
-python balanced_ner_generation.py \
+python synthetic_data.py \
   --synthetic_entities_per_label 300 \
   --few_shot_sentence_count 6 \
   --temperature 0.8 \
@@ -29,75 +29,99 @@ python balanced_ner_generation.py \
   --output_file balanced_ner_300.json
 ```
 
-The output is saved to `data/local/ner/balanced_ner_300.json`. Existing output files are not overwritten.
+The exact command-line options should be checked against the selected script because the two generation implementations may have different arguments.
 
-## Validation and Output
+### 2. Preparing GLiNER Training Data
 
-The script rejects invalid or duplicate sentences, invalid or overlapping target-label spans, candidates exceeding the remaining annotation quota, and candidates violating the repetition limit. By default, each normalized entity expression can occur at most **10 times per label**.
+The following scripts prepare annotated data for GLiNER fine-tuning:
 
-Each saved JSON record contains `tokens` and `entities`, with `text`, `label`, `start_token`, and `end_token`. Token indices are **zero-based and end-exclusive**. Final annotation counts are checked against the requested quota for each generated label.
+- `create_gliner_training_data.py` — prepares annotated NER data for training.
+- `create_gliner_training_data_with_syn.py` — prepares training data for experiments involving synthetic examples.
 
-## Limitations and GLiNER
-
-- Only annotations for the requested target label are saved; entities from other categories may remain unannotated.
-- Automatic validation does not guarantee scientific accuracy or correct semantic labels.
-- Strict quotas and repetition limits may require additional generation attempts.
-
-A separate preprocessing step converts `tokens` to `tokenized_text` and entity spans to `ner` entries, changing end-exclusive indices to end-inclusive indices. The thesis fine-tunes `numind/NuNerZero_span` and evaluates against gold-standard annotations using precision, recall, and F1.
-
-## GLiNER Fine-Tuning Arguments
-
-The separate GLiNER training script accepts the following command-line arguments. It expects **preprocessed** records containing `tokenized_text` and `ner` (with inclusive end indices), not the generator's raw `tokens`/`entities` output.
-
-### Input and output
-
-| Argument | Default | Description |
-| --- | --- | --- |
-| `--train_files` | **Required** | One or more JSON/JSONL training files. These are loaded and optionally subsampled before synthetic data is added. |
-| `--synthetic_files` | None | Optional additional JSON/JSONL training files, appended to the selected training data. |
-| `--eval_files` | None | Optional separate evaluation files. If omitted, evaluation data is split from the combined training data. |
-| `--model_name` | `numind/NuNerZero_span` | Pretrained GLiNER checkpoint to fine-tune. |
-| `-o`, `--base_output_dir` | `data/local/ner/models` | Parent directory for the automatically named model output folder. |
-| `-f`, `--force` | Off | Delete and replace an existing output folder. **Use with care.** |
-
-### Training and evaluation
-
-| Argument | Default | Description |
-| --- | --- | --- |
-| `--batch_size` | `2` | Per-device training and evaluation batch size. |
-| `--accumulation_steps` | `1` | Number of gradient accumulation steps. |
-| `--num_train_epochs` | `None` | Number of training epochs; when omitted, the training library determines its behavior. |
-| `--train_fraction` | `1.0` | Fraction of data from `--train_files` to retain, before adding synthetic data. Must be greater than 0 and at most 1. |
-| `--eval_fraction` | `0.1` | Fraction of combined data reserved for evaluation when `--eval_files` is absent. Set to `0` to disable this split. |
-| `--learning_rate` | `5e-6` | Learning rate for the main model parameters. |
-| `--others_lr` | `1e-5` | Learning rate for other parameter groups. |
-| `--weight_decay` | `0.01` | Weight decay for the main parameter group. |
-| `--others_weight_decay` | `0.01` | Weight decay for other parameter groups. |
-| `--warmup_ratio` | `0.1` | Fraction of training steps used for learning-rate warmup. |
-| `--focal_loss_alpha` | `0.75` | Focal-loss alpha parameter. |
-| `--focal_loss_gamma` | `2.0` | Focal-loss gamma parameter. |
-| `--save_steps` | `100` | Checkpoint saving interval in steps. |
-| `--save_total_limit` | `1` | Maximum number of saved checkpoints to retain. |
-| `--report_to` | `none` | Training-reporting integration passed to GLiNER. |
-| `--seed` | `42` | Seed for dataset shuffling and PyTorch random number generation. |
-
-### Training example
-
-Assuming your training script is named `train_gliner.py`:
+Run:
 
 ```bash
-python train_gliner.py \
-  --train_files data/local/ner/processed_train.json \
-  --synthetic_files data/local/ner/processed_synthetic.json \
-  --eval_files data/local/ner/processed_eval.json \
+python create_gliner_training_data.py --help
+python create_gliner_training_data_with_syn.py --help
+```
+
+For a converter supporting the input and output arguments described previously, an example is:
+
+```bash
+python create_gliner_training_data.py \
+  --input-dir data/local/ner/outputs/engage-ft-auto-filtered \
+  --output-file data/local/ner/gliner_training_data_filtered/data.json
+```
+
+The preprocessing stage converts the original entity annotations into GLiNER-compatible records containing `tokenized_text` and `ner`. Entity end indices are converted from exclusive to inclusive.
+
+### 3. Fine-Tuning GLiNER
+
+Two training scripts are available:
+
+- `finetune_nunerzero_span.py` — fine-tunes GLiNER using the prepared training dataset.
+- `finetune_nunerzero_span_synth.py` — fine-tunes GLiNER for experiments involving synthetic training data.
+
+For fine-tuning on the prepared annotated dataset:
+
+```bash
+python finetune_nunerzero_span.py \
+  --train_files data/local/ner/gliner_training_data_filtered/data.json \
   --model_name numind/NuNerZero_span \
+  --train_fraction 0.2 \
+  --eval_fraction 0.1 \
   --batch_size 2 \
-  --accumulation_steps 4 \
-  --num_train_epochs 3 \
   --learning_rate 5e-6 \
   --seed 42
 ```
 
-Replace the example paths and script name with the actual ones in your project. For **synthetic-only training**, provide the synthetic training dataset through `--train_files` and omit `--synthetic_files`.
+For combined real and synthetic training, if the synthetic training script supports `--synthetic_files`:
 
-The training script shuffles the data, lowercases tokens inside annotated entity spans, and uses CUDA if available (otherwise CPU). When `--eval_files` is supplied, it uses those files as the evaluation set instead of splitting the training data. Output folder names are derived from the model name and the **parent directory names** of the input files; distinct input filenames in the same directories may therefore produce the same output folder name.
+```bash
+python finetune_nunerzero_span_synth.py \
+  --train_files data/local/ner/gliner_training_data_filtered/data.json \
+  --synthetic_files data/local/ner/processed_synthetic.json \
+  --eval_files data/local/ner/processed_eval.json \
+  --model_name numind/NuNerZero_span \
+  --train_fraction 0.2 \
+  --batch_size 2 \
+  --learning_rate 5e-6 \
+  --seed 42
+```
+
+Replace the synthetic and evaluation paths with the actual preprocessed datasets.
+
+For synthetic-only fine-tuning, provide the preprocessed synthetic dataset through `--train_files` and omit `--synthetic_files`.
+
+The training scripts load the pretrained GLiNER checkpoint, prepare the training and evaluation data, and save the fine-tuned model in the configured output directory.
+
+### 4. Evaluating Fine-Tuned Models
+
+The `evaluate.py` script is used to evaluate the trained NER models.
+
+Check its available arguments:
+
+```bash
+python evaluate.py --help
+```
+
+Provide the fine-tuned model directory and gold-standard evaluation dataset using the arguments supported by the script.
+
+Model performance is assessed using precision, recall, and F1 score, allowing comparisons between silver-annotated, synthetic-only, and combined-data fine-tuning approaches.
+
+### 5. Recommended Execution Order
+
+Run the scripts in the following order, depending on the experiment:
+
+| Step | Script | Purpose |
+|---|---|---|
+| 1 | `synthetic_data.py` or `improved_synthetic_data.py` | Generate synthetic NER examples |
+| 2 | `create_gliner_training_data.py` | Prepare annotated training data |
+| 3 | `create_gliner_training_data_with_syn.py` | Prepare data for synthetic-data experiments |
+| 4 | `finetune_nunerzero_span.py` | Fine-tune on annotated data |
+| 5 | `finetune_nunerzero_span_synth.py` | Fine-tune using synthetic data |
+| 6 | `evaluate.py` | Evaluate models on the gold-standard dataset |
+
+Not every script is required for every experiment. For example, synthetic-only fine-tuning does not require a separate silver-annotated training dataset.
+
+**Note:** The commands above are based on the filenames shown and the script interfaces discussed previously. The actual argument names for each file should be verified using `--help` or by inspecting the script before execution.
