@@ -25,23 +25,65 @@ synthetic_data/
 │
 └── without_guidelines/
     ├── example_size_experiment/
+    │   ├── synthesized_data_8shot_200_base_prompt.json
+    │   ├── synthesized_data_8shot_400_base_prompt.json
+    │   ├── synthesized_data_8shot_600_base_prompt.json
+    │   └── synthesized_data_8shot_800_base_prompt.json
+    │
     └── few_shot_experiment/
+        ├── synthesized_data_6shot_250_base_prompt.json
+        ├── synthesized_data_8shot_250_base_prompt.json
+        └── synthesized_data_10shot_250_base_prompt.json
 ```
 
-**With guidelines**
+#### 1.1 Synthetic Data With Guidelines
 
-The `with_guidelines/` directory contains synthetic datasets generated using annotation guidelines and different numbers of few-shot examples (6, 8, and 10 shots).
+The `with_guidelines/` directory contains synthetic datasets generated using additional annotation guidelines.
 
-These datasets allow investigation of how the number of few-shot examples affects synthetic data generation when annotation guidelines are included.
+Three configurations are available:
 
-**Without guidelines**
+| Dataset | Few-shot examples | Generation size parameter |
+|---|---|---|
+| `synthesized_data_6shot_250_guidelines.json` | 6 | 250 |
+| `synthesized_data_8shot_250_guidelines.json` | 8 | 250 |
+| `synthesized_data_10shot_250_guidelines.json` | 10 | 250 |
 
-The `without_guidelines/` directory contains two experiment groups:
+The generation size parameter is kept constant at 250, while the number of few-shot examples varies.
 
-- `example_size_experiment/` — experiments investigating the effect of the number of generated synthetic examples.
-- `few_shot_experiment/` — experiments investigating the effect of the number of few-shot examples used during generation.
+This experiment investigates how different numbers of few-shot examples influence synthetic NER data generation when additional annotation guidelines are provided.
 
-These experiments allow the influence of dataset size and few-shot prompting to be studied without additional annotation guidelines.
+#### 1.2 Synthetic Data Without Guidelines
+
+The `without_guidelines/` directory contains two experiment groups that use the baseline prompting approach.
+
+**Example Size Experiment**
+
+The `example_size_experiment/` directory contains datasets generated using a fixed number of 8 few-shot examples while varying the generation size parameter.
+
+| Dataset | Few-shot examples | Generation size parameter |
+|---|---|---|
+| `synthesized_data_8shot_200_base_prompt.json` | 8 | 200 |
+| `synthesized_data_8shot_400_base_prompt.json` | 8 | 400 |
+| `synthesized_data_8shot_600_base_prompt.json` | 8 | 600 |
+| `synthesized_data_8shot_800_base_prompt.json` | 8 | 800 |
+
+This experiment investigates the effect of synthetic dataset size on downstream NER model performance while keeping the few-shot prompting configuration constant.
+
+**Few-Shot Experiment**
+
+The `few_shot_experiment/` directory contains datasets generated using different numbers of few-shot examples while keeping the generation size parameter fixed at 250.
+
+| Dataset | Few-shot examples | Generation size parameter |
+|---|---|---|
+| `synthesized_data_6shot_250_base_prompt.json` | 6 | 250 |
+| `synthesized_data_8shot_250_base_prompt.json` | 8 | 250 |
+| `synthesized_data_10shot_250_base_prompt.json` | 10 | 250 |
+
+This experiment investigates how the number of few-shot examples used during generation influences synthetic NER data quality and downstream model performance.
+
+Together, these experiments enable comparisons of dataset size, few-shot prompting, and the use of additional annotation guidelines.
+
+#### 1.3 Running Synthetic Data Generation
 
 To inspect the available generation arguments, run:
 
@@ -54,11 +96,11 @@ For example, if supported by the selected script:
 
 ```bash
 python synthetic_data.py \
-  --synthetic_entities_per_label 300 \
-  --few_shot_sentence_count 6 \
+  --synthetic_entities_per_label 200 \
+  --few_shot_sentence_count 8 \
   --temperature 0.8 \
   --max_entity_occurrences 10 \
-  --output_file synthetic_data/without_guidelines/example_size_experiment/balanced_ner_300.json
+  --output_file synthetic_data/without_guidelines/example_size_experiment/synthesized_data_8shot_200_base_prompt.json
 ```
 
 The exact command-line arguments should be verified against the selected script, as the two implementations may expose different options.
@@ -94,14 +136,15 @@ When the original annotations use exclusive end indices, these are converted to 
 
 For experiments involving synthetic data, the generated JSON files must be converted into the format expected by the fine-tuning scripts.
 
-The synthetic input files can be selected from either:
+Synthetic datasets can be selected from the three experiment directories:
 
 ```text
 synthetic_data/with_guidelines/
-synthetic_data/without_guidelines/
+synthetic_data/without_guidelines/example_size_experiment/
+synthetic_data/without_guidelines/few_shot_experiment/
 ```
 
-This enables training datasets to be prepared for different prompting strategies, few-shot configurations, and synthetic dataset sizes.
+Each dataset can be prepared separately to allow comparisons between different synthetic data generation configurations.
 
 ### 3. Fine-Tuning GLiNER
 
@@ -112,7 +155,7 @@ Two fine-tuning scripts are provided:
 
 Both scripts use the pretrained `numind/NuNerZero_span` checkpoint as the starting point.
 
-**Fine-tuning on silver-annotated data**
+#### 3.1 Fine-Tuning on Silver-Annotated Data
 
 An example command is:
 
@@ -127,7 +170,7 @@ python finetune_nunerzero_span.py \
   --seed 42
 ```
 
-**Fine-tuning with synthetic data**
+#### 3.2 Fine-Tuning With Synthetic Data
 
 The synthetic fine-tuning script supports experiments involving synthetic datasets generated with or without annotation guidelines.
 
@@ -149,19 +192,23 @@ The `--synthetic_files` and `--eval_files` paths must point to the corresponding
 
 For synthetic-only fine-tuning, the preprocessed synthetic dataset can be supplied through `--train_files`, omitting `--synthetic_files`, provided the script supports this configuration.
 
-The fine-tuning experiments can therefore compare:
+The fine-tuning experiments can compare:
 
 1. **Silver-only training** — training using the existing annotated dataset.
 2. **Synthetic-only training** — training exclusively on generated examples.
 3. **Combined training** — training using both silver-annotated and synthetic examples.
 
-Synthetic-data experiments can additionally compare datasets generated with and without annotation guidelines, as well as different few-shot configurations and dataset sizes.
+Within the synthetic training configurations, additional comparisons can be performed across:
+
+- Datasets generated with and without annotation guidelines.
+- Few-shot configurations using 6, 8, or 10 examples.
+- Generation size configurations of 200, 400, 600, and 800.
 
 The fine-tuned models are saved in their configured output directories.
 
 ### 4. Evaluating Fine-Tuned Models
 
-The `evaluate.py` script is used to evaluate the trained NER models against a gold-standard evaluation dataset.
+The `evaluate.py` script is used to evaluate trained NER models against a gold-standard evaluation dataset.
 
 Inspect its supported arguments using:
 
@@ -179,12 +226,12 @@ Model performance is assessed using standard NER evaluation metrics:
 
 These metrics enable comparisons between the different training configurations.
 
-In particular, evaluation can be used to investigate the influence of:
+In particular, evaluation can be used to investigate:
 
-- Synthetic data generated with versus without annotation guidelines.
-- Different numbers of few-shot examples.
-- Different synthetic dataset sizes.
-- Silver-only, synthetic-only, and combined training strategies.
+- The influence of annotation guidelines on synthetic data generation.
+- The effect of using 6, 8, or 10 few-shot examples.
+- The effect of different synthetic dataset sizes.
+- The performance of silver-only, synthetic-only, and combined training approaches.
 
 All models should be evaluated using the same gold-standard dataset and evaluation procedure to ensure comparable results.
 
@@ -210,16 +257,22 @@ For example:
 - **Synthetic-only experiments** require synthetic data generation, conversion into GLiNER format, synthetic fine-tuning, and evaluation.
 - **Combined-data experiments** require preparation of both annotated and synthetic datasets before fine-tuning and evaluation.
 
-### 6. Synthetic Data Experiment Organization
+### 6. Synthetic Data Experiment Overview
 
-The repository separates synthetic generation experiments into the following categories:
+The synthetic datasets are organized into three experimental groups:
 
-| Experiment | Directory | Main variable |
-|---|---|---|
-| With guidelines | `synthetic_data/with_guidelines/` | Number of few-shot examples (6, 8, 10) |
-| Without guidelines — example size | `synthetic_data/without_guidelines/example_size_experiment/` | Number of generated examples |
-| Without guidelines — few-shot | `synthetic_data/without_guidelines/few_shot_experiment/` | Number of few-shot examples |
+| Experiment | Prompting strategy | Few-shot examples | Generation size parameters |
+|---|---|---|---|
+| With guidelines | Extended prompt with annotation guidelines | 6, 8, 10 | 250 |
+| Without guidelines — example size | Baseline prompt | 8 | 200, 400, 600, 800 |
+| Without guidelines — few-shot | Baseline prompt | 6, 8, 10 | 250 |
 
-This organization supports systematic comparisons of the synthetic data generation strategies and their effects on downstream NER model performance.
+The experiments are designed to isolate different aspects of synthetic data generation:
 
-**Note:** The repository structure and dataset filenames above reflect the provided screenshots. The example commands are illustrative and should be checked against the actual script interfaces. In particular, the available command-line arguments, preprocessing requirements, and output directories should be verified before running the pipeline.
+- **Guideline comparison:** Compare datasets generated with and without annotation guidelines under matching few-shot and generation size configurations.
+- **Example size comparison:** Investigate the influence of the synthetic data generation size parameter while keeping the number of few-shot examples fixed at 8.
+- **Few-shot comparison:** Investigate the influence of using 6, 8, or 10 few-shot examples while keeping the generation size parameter fixed at 250.
+
+The resulting datasets can be used for downstream GLiNER fine-tuning experiments to assess how different synthetic data generation strategies affect NER performance.
+
+**Note:** The repository structure and filenames reflect the provided screenshots. The numeric generation size parameters are inferred from filenames and should be checked against the generation scripts before interpreting them as exact record counts. The example commands are illustrative; command-line arguments, preprocessing requirements, and output paths should be verified against the actual Python implementations.
