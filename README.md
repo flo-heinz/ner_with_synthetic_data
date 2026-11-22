@@ -275,26 +275,6 @@ Replace the model path with the directory containing the fine-tuned checkpoint.
 
 The evaluation pipeline saves predictions and evaluation metrics. The repeated experiments in the thesis report mean overall metrics across five runs.
 
----
-
-## Experimental Results
-
-The main findings of the thesis are summarized below.
-
-| Training configuration | Overall F1 score |
-|---|---:|
-| Silver-only, 20% training fraction | 47.0% |
-| Synthetic-only, eight-shot baseline prompt (250 examples per category) | 31.2% |
-| Synthetic-only, eight-shot baseline prompt (200 examples per category) | 32.2% |
-| Combined silver and synthetic data (20% silver + 200 synthetic examples per category) | 41.5% |
-
-The 20% silver-annotated training fraction achieved the highest observed mean overall F1 score among the silver-only configurations.
-
-For synthetic-only training, the eight-shot baseline prompt performed best in the prompting comparison. Increasing the synthetic dataset size or adding additional annotation guidelines did not improve overall performance in the tested configurations.
-
-Combining the 20% silver-annotated training subset with synthetic examples reduced the mean overall F1 score from approximately 47.0% to 41.5%.
-
-These findings indicate that increasing the quantity of automatically generated training data does not necessarily improve domain-specific NER performance.
 
 ---
 
