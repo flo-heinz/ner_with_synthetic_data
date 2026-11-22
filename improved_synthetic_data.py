@@ -1,4 +1,17 @@
-"""Generate guideline-aligned synthetic NER examples using a local OpenAI-compatible model."""
+"""
+Generate guideline-aligned synthetic NER training examples using a local model.
+
+The pipeline samples annotated reference examples, prompts an OpenAI-compatible
+model to generate sentences, validates entity spans against token boundaries,
+and collects diverse examples until each label reaches its entity quota.
+
+Example usage:
+    python generate_synthetic_ner_commented.py
+
+    python generate_synthetic_ner_commented.py \
+        --synthetic_entities_per_label 100 \
+        --temperature 0.7 --few_shot_sentence_count 8
+"""
 
 import json
 import random
@@ -97,14 +110,33 @@ class Generation(BaseModel):
 
 
 def normalize(text: str) -> str:
+    """
+    Normalize text for case-insensitive duplicate and mention counting.
+
+    Args:
+        text: Original sentence or entity phrase.
+
+    Returns:
+        Case-folded text with normalized whitespace.
+    """
     return " ".join(text.casefold().split())
 
 
 def load_references() -> dict[str, list[dict]]:
-    """Load and deduplicate annotated reference examples by entity label."""
+    """
+    Load and deduplicate annotated reference examples by entity label.
+
+    Returns:
+        Mapping of entity labels to reference sentences and entity phrases.
+
+    Raises:
+        FileNotFoundError: If the reference directory is missing.
+        ValueError: If no usable annotated references are found.
+    """
     if not reference_dir.is_dir():
         raise FileNotFoundError(f"Reference directory not found: {reference_dir}")
 
+    # Group references by label and track normalized duplicates.
     grouped = defaultdict(list)
     seen = defaultdict(set)
     for path in sorted(reference_dir.iterdir()):
@@ -136,7 +168,12 @@ def load_references() -> dict[str, list[dict]]:
 
 
 def get_client():
-    """Reuse one OpenAI-compatible client per worker thread."""
+    """
+    Reuse one OpenAI-compatible client per worker thread.
+
+    Returns:
+        Thread-local Instructor client configured for structured JSON output.
+    """
     if not hasattr(THREAD_LOCAL, "client"):
         THREAD_LOCAL.client = instructor.from_openai(
             OpenAI(base_url=base_url, api_key="EMPTY", timeout=120),
@@ -146,7 +183,18 @@ def get_client():
 
 
 def generate(label: str, references: list[dict], seed: int):
-    """Generate one structured example using sampled few-shot references."""
+    """
+    Generate one structured example using sampled few-shot references.
+
+    Args:
+        label: Target entity label to generate.
+        references: Available annotated examples for the label.
+        seed: Random seed for reproducible few-shot sampling.
+
+    Returns:
+        Converted token-level annotation and its original sentence.
+    """
+    # Sample label-specific examples without altering global random state.
     rng = random.Random(seed)
     samples = rng.sample(references, min(few_shot_sentence_count, len(references)))
     examples = "\n".join(
@@ -159,6 +207,7 @@ def generate(label: str, references: list[dict], seed: int):
         rules=ANNOTATION_RULES,
         examples=examples,
     )
+    # Request a Pydantic-validated structured response from the local model.
     response = get_client().chat.completions.create(
         model=model,
         response_model=Generation,
@@ -170,11 +219,24 @@ def generate(label: str, references: list[dict], seed: int):
 
 
 def convert(response: Generation, label: str):
-    """Validate entity mentions and map character spans to token offsets."""
+    """
+    Validate entity mentions and map character spans to token offsets.
+
+    Args:
+        response: Structured sentence and entity mentions from the model.
+        label: Required entity label for this generation request.
+
+    Returns:
+        GLiNER-style token annotations and the generated sentence.
+
+    Raises:
+        ValueError: If the sentence or its entity spans are invalid.
+    """
     sentence = response.sentence.strip()
     if not sentence or "\n" in sentence or "_" in sentence:
         raise ValueError("Invalid sentence")
 
+    # Tokenize while retaining character offsets for exact span alignment.
     offsets = [(m.group(), m.start(), m.end()) for m in TOKEN_RE.finditer(sentence)]
     entities = []
     for entity in response.entities:
@@ -182,6 +244,7 @@ def convert(response: Generation, label: str):
         if (entity.label != label or not phrase or "_" in phrase
                 or normalize(phrase) == normalize(label.replace("_", " "))):
             continue
+        # Annotate every exact occurrence of a valid target phrase.
         for match in re.finditer(re.escape(phrase), sentence):
             start, end = match.span()
             covered = [i for i, (_, a, b) in enumerate(offsets) if a < end and b > start]
@@ -193,6 +256,7 @@ def convert(response: Generation, label: str):
                 "start_token": covered[0],
                 "end_token": covered[-1] + 1,
             }
+            # Discard duplicate or overlapping entity spans.
             if candidate not in entities and not any(
                 candidate["start_token"] < other["end_token"]
                 and other["start_token"] < candidate["end_token"]
@@ -207,7 +271,16 @@ def convert(response: Generation, label: str):
 
 
 def main():
-    """Generate unique examples until each label reaches its entity quota."""
+    """
+    Generate unique examples until each label reaches its entity quota.
+
+    Runs model requests concurrently, enforces sentence and mention diversity,
+    checks final annotation counts, and saves the completed dataset.
+
+    Raises:
+        RuntimeError: If any label fails to reach its quota.
+        FileExistsError: If the target output file already exists.
+    """
     references = load_references()
     labels = sorted(references)
     target = synthetic_entities_per_label * len(labels)
@@ -217,7 +290,7 @@ def main():
     rng = random.Random(42)
 
     def save_records():
-        """Write results through a temporary file before replacing the target."""
+        """Atomically write the collected records to the configured output file."""
         output_file.parent.mkdir(parents=True, exist_ok=True)
         temporary = output_file.with_suffix(output_file.suffix + ".tmp")
         temporary.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -233,6 +306,7 @@ def main():
             future = pool.submit(generate, label, references[label], rng.getrandbits(64))
             futures[future] = label
 
+        # Seed two in-flight requests per label to start concurrent generation.
         for label in labels:
             for _ in range(2):
                 submit(label)
@@ -259,6 +333,7 @@ def main():
                         for phrase, occurrences in mention_counts.items()
                     ):
                         raise ValueError("Entity repetition limit reached")
+                    # Accept the example and update all quota/diversity counters.
                     seen_sentences.add(key)
                     records.append(record)
                     counts[label].update(mention_counts)
@@ -268,6 +343,7 @@ def main():
                     rejected[label] += 1
                 submit(label)
 
+    # Check that all labels have reached the requested entity quota.
     missing = {
         label: synthetic_entities_per_label - accepted[label]
         for label in labels
@@ -285,6 +361,7 @@ def main():
             raise RuntimeError(
                 f"Saved annotation mismatch for {label}: {actual_counts[label]}"
             )
+    # Avoid overwriting an existing dataset without explicit intervention.
     if output_file.exists():
         raise FileExistsError(f"Output file already exists: {output_file}")
     save_records()
@@ -294,6 +371,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # Expose the generation and diversity settings as command-line options.
     parser = argparse.ArgumentParser()
     parser.add_argument("--synthetic_entities_per_label", "--synthetic_examples_per_label",
                         type=int, default=synthetic_entities_per_label)
