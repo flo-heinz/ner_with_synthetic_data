@@ -1,3 +1,23 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Convert annotated NER sentence files into GLiNER training data.
+
+The script reads JSON files containing tokenized sentences and entity annotations,
+converts entity spans to GLiNER's inclusive token-index format, and combines
+positive examples into one output JSON file.
+
+Example usage:
+    # Run with default input and output paths
+    python convert_gliner_commented.py
+
+    # Override input and output paths
+    python convert_gliner_commented.py \
+        --input-dir data/local/ner/outputs/engage-ft-auto-filtered \
+        --output-file data/local/ner/gliner_training_data_filtered/data.json
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -9,10 +29,11 @@ from typing import Any
 from engage_nlp.utils.custom_logging import get_logger, setup_logging
 
 
+# Initialize logging for the conversion pipeline.
 logger = get_logger()
 setup_logging(verbose=True)
 
-
+# Define default paths relative to the project root.
 project_dir = Path(__file__).resolve().parents[5]
 logger.info(f"Project directory: {project_dir}")
 
@@ -25,8 +46,12 @@ DEFAULT_OUTPUT_FILE = (
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse command-line arguments."""
+    """
+    Parse command-line arguments for input and output paths.
 
+    Returns:
+        Parsed command-line arguments.
+    """
     parser = argparse.ArgumentParser(
         description="Convert annotated NER files to GLiNER training format."
     )
@@ -50,20 +75,27 @@ def parse_args() -> argparse.Namespace:
 
 def load_sentences(path: Path) -> list[dict[str, Any]]:
     """
-    Load sentence records from JSON or JSONL.
+    Load sentence records from a JSON or JSONL file.
 
     Supported input formats:
-    - a JSON list of dictionaries
-    - a single JSON dictionary
-    - JSONL with one dictionary per line
-    """
+        - A JSON list of dictionaries
+        - A single JSON dictionary
+        - JSONL with one dictionary per line
 
+    Args:
+        path: Path to the input file.
+
+    Returns:
+        List of sentence dictionaries. Empty or invalid records are skipped.
+    """
+    # Read the complete file before determining its JSON format.
     text = path.read_text(encoding="utf8").strip()
 
     if not text:
         logger.warning(f"Skipping empty file: {path}")
         return []
 
+    # First try parsing the input as a complete JSON document.
     try:
         data = json.loads(text)
 
@@ -86,6 +118,7 @@ def load_sentences(path: Path) -> list[dict[str, Any]]:
         # The file may be JSONL.
         pass
 
+    # Fall back to reading one JSON object per line.
     sentences: list[dict[str, Any]] = []
 
     for line_no, line in enumerate(
@@ -124,13 +157,21 @@ def format_annotation_for_gliner(
     """
     Convert one annotated sentence into GLiNER training format.
 
-    The input end_token value is assumed to be exclusive.
-    GLiNER expects the end token index to be inclusive.
-    """
+    Input entity spans use an exclusive end_token index, while GLiNER expects
+    an inclusive end token index. Invalid entities are skipped; sentences
+    without valid tokens are discarded.
 
+    Args:
+        annotated_sentence: Dictionary containing tokens and entity annotations.
+
+    Returns:
+        Dictionary with tokenized_text and ner fields, or None if tokens
+        are missing or invalid.
+    """
     tokens = annotated_sentence.get("tokens")
     entities = annotated_sentence.get("entities", [])
 
+    # Skip sentences without a valid token sequence.
     if not tokens:
         return None
 
@@ -140,17 +181,20 @@ def format_annotation_for_gliner(
         )
         return None
 
+    # Treat malformed entity collections as sentences without annotations.
     if not isinstance(entities, list):
         logger.warning(
             f"Treating non-list entities as empty: {entities}"
         )
         entities = []
 
+    # Initialize the GLiNER record with tokens and an empty entity list.
     result: dict[str, Any] = {
         "tokenized_text": tokens,
         "ner": [],
     }
 
+    # Validate and convert each entity span independently.
     for annotation in entities:
         if not isinstance(annotation, dict):
             logger.warning(
@@ -162,6 +206,7 @@ def format_annotation_for_gliner(
         end_token_exclusive = annotation.get("end_token")
         label = annotation.get("label")
 
+        # Entity spans require a start index, end index, and label.
         if (
             start_token is None
             or end_token_exclusive is None
@@ -172,6 +217,7 @@ def format_annotation_for_gliner(
             )
             continue
 
+        # Reject non-integer indices before checking span boundaries.
         if (
             not isinstance(start_token, int)
             or not isinstance(end_token_exclusive, int)
@@ -193,6 +239,7 @@ def format_annotation_for_gliner(
             )
             continue
 
+        # Convert the exclusive end index to GLiNER's inclusive end index.
         end_token_inclusive = end_token_exclusive - 1
 
         if end_token_inclusive >= len(tokens):
@@ -202,6 +249,7 @@ def format_annotation_for_gliner(
             )
             continue
 
+        # Store each valid entity as [start_token, end_token, label].
         result["ner"].append(
             [
                 start_token,
@@ -214,6 +262,10 @@ def format_annotation_for_gliner(
 
 
 def main() -> None:
+    """
+    Run the annotated NER to GLiNER training-data conversion pipeline.
+    """
+    # Parse paths and check that the input directory exists.
     args = parse_args()
 
     input_dir = args.input_dir
@@ -227,6 +279,7 @@ def main() -> None:
             f"Input directory does not exist: {input_dir}"
         )
 
+    # Collect input JSON files in a deterministic order.
     files = sorted(input_dir.glob("*.json"))
 
     if not files:
@@ -239,14 +292,17 @@ def main() -> None:
         f"Found {len(files)} JSON files in {input_dir}"
     )
 
+    # Accumulate positive GLiNER examples and per-label entity counts.
     all_gliner_data: list[dict[str, Any]] = []
     total_label_counts: Counter[str] = Counter()
 
+    # Track dataset-wide processing statistics.
     total_sentences = 0
     total_skipped = 0
     total_positive = 0
     total_negative = 0
 
+    # Process each input file and collect its local statistics.
     for input_path in files:
         sentences = load_sentences(input_path)
 
@@ -261,6 +317,7 @@ def main() -> None:
 
             formatted = format_annotation_for_gliner(sentence)
 
+            # Count sentences that cannot be converted because of invalid tokens.
             if formatted is None:
                 total_skipped += 1
                 file_skipped += 1
@@ -274,11 +331,13 @@ def main() -> None:
                 # negative examples are not added to the output dataset.
                 continue
 
+            # Keep sentences with at least one valid entity annotation.
             all_gliner_data.append(formatted)
 
             total_positive += 1
             file_positive += 1
 
+            # Count each entity occurrence by label.
             for _, _, label in formatted["ner"]:
                 total_label_counts[label] += 1
 
@@ -290,6 +349,7 @@ def main() -> None:
             f"skipped={file_skipped}"
         )
 
+    # Create the output directory and save the combined training examples.
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     with output_file.open(
@@ -303,6 +363,7 @@ def main() -> None:
             indent=2,
         )
 
+    # Report overall conversion statistics and the output location.
     logger.info(f"Processed {total_sentences} sentences")
     logger.info(f"Skipped {total_skipped} sentences with missing or invalid tokens")
     logger.info(f"Found {total_negative} negative sentences with no valid entities")
@@ -311,6 +372,7 @@ def main() -> None:
     logger.info(f"Label counts: {dict(total_label_counts)}")
     logger.info(f"Saved combined GLiNER dataset to {output_file}")
 
+    # Print one converted example for quick inspection.
     if all_gliner_data:
         print("\nExample:")
         print(
