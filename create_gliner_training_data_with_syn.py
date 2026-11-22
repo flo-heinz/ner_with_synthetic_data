@@ -1,3 +1,23 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Convert and filter synthetic NER annotations into GLiNER training examples.
+
+The script reads JSON or JSONL data, validates token sequences and entity spans,
+filters unsupported labels, removes duplicate or overlapping entities, and
+writes deduplicated GLiNER examples as a JSON array.
+
+Example usage:
+    # Convert the dataset using the default paths
+    python path/to/convert_synthetic_ner.py
+
+    # Override input and output paths
+    python path/to/convert_synthetic_ner.py \
+        --input-file data/local/ner/synthetic.json \
+        --output-file data/local/ner/filtered.json
+"""
+
 
 from __future__ import annotations
 
@@ -20,6 +40,15 @@ def find_project_root(start: Path) -> Path:
 
     This allows file paths to be resolved relative to the project root,
     regardless of where the script is executed.
+
+    Args:
+        start: Directory from which to begin searching upward.
+
+    Returns:
+        Path to the repository root.
+
+    Raises:
+        RuntimeError: If no parent directory contains pyproject.toml.
     """
     start = start.resolve()
 
@@ -69,7 +98,12 @@ ALLOWED_LABELS = {
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse command-line arguments for input and output dataset paths."""
+    """
+    Parse command-line arguments for input and output dataset paths.
+
+    Returns:
+        Parsed command-line arguments.
+    """
 
     parser = argparse.ArgumentParser(
         description="Convert synthetic NER data to GLiNER format."
@@ -98,6 +132,9 @@ def load_records(path: Path) -> tuple[list[dict[str, Any]], int]:
 
     Supports a JSON list, a single JSON object, or newline-delimited
     JSON objects. Malformed records are skipped and counted.
+
+    Args:
+        path: Path to the input JSON or JSONL file.
 
     Returns:
         A tuple containing valid dictionary records and the number
@@ -163,6 +200,12 @@ def validate_tokens(value: Any) -> list[str] | None:
     Validate the token sequence of an input example.
 
     A valid sequence must be a non-empty list of non-empty strings.
+
+    Args:
+        value: Candidate token sequence to validate.
+
+    Returns:
+        The validated tokens, or None if the sequence is invalid.
     """
     if not isinstance(value, list) or not value:
         return None
@@ -181,6 +224,13 @@ def convert_entity(entity: Any, tokens: list[str]) -> list[Any] | None:
     GLiNER expects inclusive end indices: [start, end - 1].
 
     Entities with invalid indices or unsupported labels are discarded.
+
+    Args:
+        entity: Raw entity annotation to convert.
+        tokens: Validated token sequence used to check span boundaries.
+
+    Returns:
+        A [start, inclusive_end, label] entity, or None if invalid.
     """
     if not isinstance(entity, dict):
         return None
@@ -214,6 +264,13 @@ def spans_overlap(first: list[Any], second: list[Any]) -> bool:
     Check whether two inclusive entity spans overlap.
 
     Spans sharing at least one token are considered overlapping.
+
+    Args:
+        first: First entity as [start, inclusive_end, label].
+        second: Second entity in the same format.
+
+    Returns:
+        True if the spans share at least one token; otherwise False.
     """
     first_start, first_end, _ = first
     second_start, second_end, _ = second
@@ -229,6 +286,9 @@ def convert_record(
 
     Invalid, duplicate, and overlapping entities are removed.
     Examples without valid entities are optionally discarded.
+
+    Args:
+        record: Raw synthetic NER example with tokens and entities.
 
     Returns:
         The converted record (or None) and the number of skipped entities.
@@ -290,6 +350,12 @@ def record_key(record: dict[str, Any]) -> str:
 
     Sorting dictionary keys ensures that equivalent records produce
     the same serialized representation regardless of key order.
+
+    Args:
+        record: Converted GLiNER example to serialize.
+
+    Returns:
+        Canonical JSON string used as the deduplication key.
     """
     return json.dumps(
         record,
@@ -300,7 +366,12 @@ def record_key(record: dict[str, Any]) -> str:
 
 
 def main() -> None:
-    """Run the synthetic NER dataset conversion and filtering pipeline."""
+    """
+    Run the synthetic NER dataset conversion and filtering pipeline.
+
+    Read and validate input records, remove invalid and duplicate examples,
+    write the filtered dataset, and report filtering statistics.
+    """
 
     # Read the configured input and output paths.
     args = parse_args()
