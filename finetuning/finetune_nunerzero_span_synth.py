@@ -31,13 +31,13 @@ import os
 import random
 import shutil
 from pathlib import Path
+import torch
+from dotenv import load_dotenv
+from gliner import GLiNER
 
 # Enable tokenizer parallelism before importing libraries that use tokenizers.
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
-import torch
-from dotenv import load_dotenv
-from gliner import GLiNER
 
 # Load environment variables needed by the training environment.
 load_dotenv()
@@ -444,3 +444,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
