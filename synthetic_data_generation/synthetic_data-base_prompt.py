@@ -1,17 +1,24 @@
 """
-Generate guideline-aligned synthetic NER training examples using a local model.
+Generate guideline-aligned synthetic NER training examples using a local language model.
 
-The pipeline samples annotated reference examples, prompts an OpenAI-compatible
-model to generate sentences, validates entity spans against token boundaries,
-and collects diverse examples until each label reaches its entity quota.
+The pipeline loads annotated reference examples, samples few-shot examples for
+each entity label, generates synthetic sentences using a local language model,
+validates entity spans, and collects unique examples until each label reaches
+its specified entity quota.
 
 Example usage:
-    python generate_synthetic_ner_commented.py
+    python synthetic_data-base_prompt.py
 
-    python generate_synthetic_ner_commented.py \
+    python synthetic_data-base_prompt.py \
         --synthetic_entities_per_label 100 \
         --temperature 0.7 --few_shot_sentence_count 8
+
+    python synthetic_data-base_prompt.py \
+        --synthetic_entities_per_label 250 \
+        --max_entity_occurrences 5 \
+        --output_file synthetic_data.json
 """
+
 
 import json
 import random
