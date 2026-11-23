@@ -23,7 +23,6 @@ import os
 import random
 import shutil
 from pathlib import Path
-
 import torch
 from dotenv import load_dotenv
 from gliner import GLiNER
@@ -330,3 +329,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
