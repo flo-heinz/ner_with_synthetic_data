@@ -33,7 +33,7 @@ This work builds on the [Sustainability ENGAGE project](https://gitlab.uzh.ch/Li
 - **Description**: Contains raw data, silver-annotated training data, and gold-standard evaluation data.
 - **Contents**:
   - `raw/` — Raw data used to prepare the silver-annotated dataset.
-  - `silver/` — Silver-annotated scientific texts, stored as a compressed `.7z` archive.
+  - `raw/` — Raw data used to prepare the silver-annotated dataset, along with a script for removing duplicates.
   - `gold/` — Gold-standard annotations stored in Hugging Face Datasets format.
 
 The datasets used in the thesis contain:
