@@ -1,21 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+
 """
-Fine-tune a GLiNER named entity recognition model on annotated datasets.
+Fine-tune the NuNER Zero-span GLiNER model on annotated datasets.
 
 The pipeline loads GLiNER-formatted JSON or JSONL training examples, optionally
-subsamples and splits the data, lowercases entity tokens, and trains a model
-using configurable optimization and checkpoint settings.
+subsamples and splits the data, lowercases entity tokens, and fine-tunes the
+NuNER Zero-span model using configurable optimization and checkpoint settings.
 
 Example usage:
-    python train_gliner.py --train_files data/local/ner/training/data.json
+    python finetune_nunerzero_span.py \
+        --train_files data/local/ner/training/data.json
 
-    python train_gliner.py --train_files data/local/ner/training/data.json \
-        --eval_fraction 0.2 --batch_size 4 --force
+    python finetune_nunerzero_span.py \
+        --train_files data/local/ner/training/data.json \
+        --train_fraction 0.2 --eval_fraction 0.1 \
+        --batch_size 4 --force
 
-    python train_gliner.py --train_files train.json --eval_files dev.json
+    python finetune_nunerzero_span.py \
+        --train_files train.json --eval_files dev.json
 """
+
 
 from argparse import ArgumentParser
 import json
@@ -329,4 +335,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
