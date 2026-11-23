@@ -4,9 +4,9 @@ This repository provides code and datasets for the master's thesis **Improving D
 
 The thesis investigates whether **synthetic training data** generated using `Qwen/Qwen3-4B-Instruct-2507` can improve **named entity recognition (NER)** in scientific publications related to renewable energy, biodiversity, and environmental sustainability.
 
-Using GLiNER with the pretrained `numind/NuNerZero_span` checkpoint, three fine-tuning approaches are compared: **silver-annotated data**, **synthetic data**, and **combined training data**. The experiments cover 16 domain-specific entity categories and examine different few-shot prompting strategies, dataset sizes, and annotation guidelines.
+Using GLiNER with the pretrained `numind/NuNerZero_span` checkpoint, three fine-tuning approaches are compared: **silver-annotated data**, **synthetic data**, and **combined training data**. The experiments cover 16 domain-specific entity categories and investigate different few-shot prompting strategies, dataset sizes, and annotation guidelines.
 
-The work builds on the original **ENGAGE NLP framework**.
+This work builds on the [Sustainability ENGAGE project](https://gitlab.uzh.ch/LiRI/projects/engage), which provides the underlying NLP framework and supporting components used in the experiments.
 
 ---
 
@@ -33,8 +33,8 @@ The work builds on the original **ENGAGE NLP framework**.
 - **Description**: Contains raw data, silver-annotated training data, and gold-standard evaluation data.
 - **Contents**:
   - `raw/` — Raw data used to prepare the silver-annotated dataset.
-  - `silver/` — Silver-annotated scientific texts, provided as a compressed `.7z` archive.
-  - `gold/` — Gold-standard annotations stored in Hugging Face Datasets format (`.arrow` and metadata files).
+  - `silver/` — Silver-annotated scientific texts, stored as a compressed `.7z` archive.
+  - `gold/` — Gold-standard annotations stored in Hugging Face Datasets format.
 
 The datasets used in the thesis contain:
 
@@ -43,7 +43,7 @@ The datasets used in the thesis contain:
 | Silver-annotated | 963 | 262,794 | 287,369 |
 | Gold-standard | 125 | 142 | 3,260 |
 
-The silver-annotated dataset is used for training, while the gold-standard dataset is used exclusively for evaluation. DOI-based deduplication was performed to prevent publication-level overlap.
+The silver-annotated dataset is used for training, while the gold-standard dataset is used exclusively for evaluation. DOI-based deduplication was performed to prevent publication-level overlap between the datasets.
 
 #### `synthetic_data/`
 - **Description**: Contains synthetic NER datasets generated using Qwen.
@@ -58,23 +58,34 @@ The silver-annotated dataset is used for training, while the gold-standard datas
 
 ### 1. Clone the Repository
 
+Clone this thesis repository:
+
 ```bash
-git clone https://github.com/flo-heinz/ner_with_synthetic_data.git
-cd ner_with_synthetic_data
+git clone https://github.com/<your-username>/<repo-name>.git
+cd <repo-name>
 ```
 
 ### 2. Set Up the Environment
 
+The experiments build on the [Sustainability ENGAGE project](https://gitlab.uzh.ch/LiRI/projects/engage).
+
+Clone or obtain the original project and navigate to its root directory. Create the Conda environment and install the framework using its provided setup instructions:
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+conda create -n engage-ner python=3.11 -y
+conda activate engage-ner
+pip install -e .
 ```
 
-Install the dependencies required by the scripts and the original ENGAGE NLP framework.
+The `pip install -e .` command must be executed from the original Sustainability ENGAGE project directory.
+
+Additional dependencies may be required for synthetic data generation and fine-tuning.
 
 ### 3. Start the Qwen Inference Server
 
-Synthetic data generation uses Qwen through vLLM. Start the inference server with Apptainer:
+Synthetic data generation uses `Qwen/Qwen3-4B-Instruct-2507` through vLLM.
+
+Start the inference server using Apptainer:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 apptainer run --nv \
@@ -88,7 +99,11 @@ CUDA_VISIBLE_DEVICES=0 apptainer run --nv \
   --enforce-eager
 ```
 
+Keep the server running while generating synthetic data.
+
 ### 4. Run Experiments
+
+The following examples use scripts from this thesis repository. Configure input/output paths and experiment settings according to the local environment.
 
 **Synthetic Data Generation**
 
@@ -135,13 +150,15 @@ python codes/finetuning/finetune_nunerzero_span_synth.py \
   --train_fraction 0.2
 ```
 
-For synthetic-only training, use `finetune_nunerzero_span_synth.py` with the synthetic dataset as `--train_files`.
+For synthetic-only fine-tuning, use `finetune_nunerzero_span_synth.py` with the converted synthetic dataset supplied as `--train_files`.
 
-The main combined experiment uses **20% silver-annotated data and 200 synthetic examples per entity category**, generated using the eight-shot baseline prompt.
+The main combined experiment uses **20% silver-annotated data and 200 synthetic examples per entity category**, generated with the eight-shot baseline prompt.
 
 **Evaluation**
 
-Evaluation requires the original ENGAGE NLP framework and its configuration files. From the original framework's root directory:
+Evaluation uses the gold-standard dataset and the Sustainability ENGAGE evaluation pipeline.
+
+From the original project's root directory:
 
 ```bash
 PYTHONPATH=src CUDA_VISIBLE_DEVICES=1 \
@@ -152,11 +169,13 @@ python -m engage_nlp.components.ner.evaluate \
 
 Use `--model baseline` to evaluate the baseline model.
 
+The thesis reports mean overall evaluation metrics across five runs.
+
 ---
 
 ## Sample Data Format
 
-GLiNER training examples use tokenized text and entity annotations with inclusive token indices:
+GLiNER training examples contain tokenized text and entity annotations:
 
 ```json
 {
@@ -165,13 +184,13 @@ GLiNER training examples use tokenized text and entity annotations with inclusiv
 }
 ```
 
-Each annotation specifies the start token, end token, and entity category.
+Each entity annotation specifies the starting token index, inclusive ending token index, and entity label.
 
 ---
 
 ## Notes
 
-- The repository contains scripts developed or modified for this thesis rather than the complete ENGAGE NLP framework.
-- Unmodified framework components and configuration files must be obtained from the original ENGAGE NLP project.
-- Some scripts require adjustments to input/output paths, dependencies, and GPU settings.
-- The original experiments were conducted within the ENGAGE NLP framework; the standalone commands shown above may require corresponding environment and path adjustments.
+- This repository contains scripts developed or modified specifically for the thesis rather than the complete Sustainability ENGAGE framework.
+- Unmodified framework components, configuration files, and supporting utilities can be obtained from the [original Sustainability ENGAGE project](https://gitlab.uzh.ch/LiRI/projects/engage).
+- Some scripts require adjustments to dataset paths, dependencies, and GPU settings.
+- The original experiments were conducted within the Sustainability ENGAGE framework; the standalone commands may require additional configuration.
