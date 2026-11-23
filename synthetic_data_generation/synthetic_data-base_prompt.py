@@ -21,7 +21,6 @@ import argparse
 from collections import Counter, defaultdict
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
-
 import instructor
 from openai import OpenAI
 from pydantic import BaseModel, Field
