@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-Fine-tune a GLiNER model using real and optional synthetic NER examples.
 
-The script loads GLiNER-formatted JSON/JSONL datasets, optionally subsamples
-real training examples, combines them with synthetic examples, prepares a
-training/evaluation split, lowercases tokens inside entity spans, and trains
-the selected GLiNER model. A separate evaluation dataset can also be supplied.
+
+"""
+Fine-tune the NuNER Zero-span GLiNER model using real and synthetic NER examples.
+
+The pipeline loads GLiNER-formatted JSON or JSONL training examples, optionally
+subsamples real examples, combines them with synthetic examples, splits the data,
+lowercases entity tokens, and fine-tunes the NuNER Zero-span model using
+configurable optimization and checkpoint settings.
 
 Example usage:
-    # Train using real examples and an automatically created evaluation split
-    python train_gliner_real_synthetic_commented.py \
+    python finetune_nunerzero_span_synth.py \
         --train_files data/local/ner/real/data.json
 
-    # Combine real and synthetic examples with separate evaluation data
-    python train_gliner_real_synthetic_commented.py \
+    python finetune_nunerzero_span_synth.py \
+        --train_files data/local/ner/real/data.json \
+        --synthetic_files data/local/ner/synthetic/data.json \
+        --train_fraction 0.2 --eval_fraction 0.1
+
+    python finetune_nunerzero_span_synth.py \
         --train_files data/local/ner/real/data.json \
         --synthetic_files data/local/ner/synthetic/data.json \
         --eval_files data/local/ner/eval/data.json
-
-    # Overwrite an existing output directory
-    python train_gliner_real_synthetic_commented.py \
-        --train_files data/local/ner/real/data.json --force
 """
+
+
 
 from argparse import ArgumentParser
 import json
@@ -444,4 +447,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
